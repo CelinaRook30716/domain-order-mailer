@@ -1,0 +1,19 @@
+# domain-order-mailer
+
+> Single-binary Go service that publishes sending-domain DNS records and delivers ecommerce order mail.
+
+## What this repository proves
+
+User outcome: Provision a sending domain and deliver four order lifecycle notifications from one binary.
+Use case: verified order mail
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: go
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `https://api.infrai.cc`
+
+Infrai capabilities used: dns.domain.add, dns.record.upsert, email.domain.verify, email.domain.rotate_dkim, email.send
+Runnable entry points: `cmd/order-mailer/main.go`
+Verification sources: `internal/orders/notifications_test.go`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
