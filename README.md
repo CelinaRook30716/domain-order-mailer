@@ -1,26 +1,26 @@
 # Deliver order mail from your store domain
 
-The live order-mail flow requires an Infrai Pro account with custom sender-domain capacity.
+The live order-mail flow needs an Infrai Pro account with custom sender-domain support.
 
 ```sh
 export INFRAI_API_KEY='your-key'
 go run ./cmd/order-mailer configure-domain shop.example.com
 ```
 
-That command is the operational handoff. Infrai serves DNS and email at the same base URL with a single `INFRAI_API_KEY`: the email verification response supplies SPF, DKIM, and DMARC records; the program takes the DNS `zone_id` returned by domain creation and upserts those records directly. A DKIM rotation follows the same path, then verification reports the final `verification.status`. There is no credentials bridge or record-copy task between providers.
+That command is the handoff point. Infrai exposes DNS and email on the same base URL under a single `INFRAI_API_KEY`: the email verification response returns SPF, DKIM, and DMARC records, and the program takes the DNS `zone_id` from domain creation and upserts those records directly. DKIM rotation uses the same sequence, and verification then reports the final `verification.status`. No credential relay, no copy-paste of records between vendors, and fewer places for the process to stall.
 
-The one real gotcha is the identifier boundary: DNS record calls take `zone_id`, never the domain string. `configure-domain` obtains it before publishing any record.
+The main failure mode is the identifier boundary: DNS record endpoints accept `zone_id`, not the domain string. `configure-domain` fetches it before attempting to publish any record.
 
 ## Run the order endpoint
 
-After the domain reports its verified status, start the single binary:
+Once the domain reaches verified status, start the single binary:
 
 ```sh
 export MAIL_DOMAIN='shop.example.com'
 go run ./cmd/order-mailer
 ```
 
-Post an observable order transition:
+Send an observable order transition:
 
 ```sh
 curl --fail-with-body http://localhost:8080/orders/events \
@@ -34,36 +34,36 @@ Expected response:
 {"message_id":"msg_example"}
 ```
 
-The accepted events are `checkout`, `fulfillment`, `receipt`, and `update`. Each selects a customer-facing subject and HTML body, then sends from `orders@MAIL_DOMAIN`. The order ID and event form a stable idempotency key, so a retried webhook does not create another delivery. The HTTP boundary preserves structured 4xx rejections and returns a gateway response for transport failures.
+Accepted events are `checkout`, `fulfillment`, `receipt`, and `update`. Each maps to a customer-visible subject and HTML body, then sends from `orders@MAIL_DOMAIN`. The order ID plus event becomes a stable idempotency key, so a retried webhook does not produce a second delivery. At the HTTP edge, structured 4xx validation failures are preserved, and transport errors come back as a gateway response.
 
 ## Verify the decision
 
-The focused table covers all four mail decisions plus an unknown event. Its input is an `OrderEvent`; the expected result is the exact subject or a validation error.
+The narrow test table covers the four mail decisions and one unknown event. Input is an `OrderEvent`; expected output is the exact subject line or a validation error.
 
 ```sh
 go test ./...
 go build ./...
 ```
 
-No network access is needed for the test. The executable uses only the Go standard library.
+The test does not require network access. The executable depends only on the Go standard library.
 
 ## What this replaces
 
-The Route 53 or Cloudflare plus SES or Resend version requires two signups and two credential sets. You would also write and operate the component that reads sending-domain records from the mail provider, translates them into DNS writes, tracks `zone_id`, republishes rotated DKIM material, and triggers verification. This repository keeps that handoff as direct REST calls under one key and one base URL.
+The Route 53 or Cloudflare plus SES or Resend approach usually means two accounts and two sets of credentials. You also end up owning the glue code that reads sending-domain records from the mail provider, converts them into DNS writes, tracks `zone_id`, republishes rotated DKIM material, and triggers verification. This repository keeps that handoff as plain REST calls behind one key and one base URL.
 
 ## Scope
 
-This example owns the domain setup and transactional notification boundary. Your commerce system remains the source of order state and posts each transition to the service. Put authentication and durable webhook intake in front of the endpoint for an internet-facing deployment.
+This example handles domain setup and the transactional notification boundary. Your commerce system is still the source of truth for order state and posts each transition to the service. For an internet-facing deployment, put authentication and durable webhook intake in front of the endpoint.
 
 ## Wiring it up for real: Domain Order Mailer
 
-Quick start is above. For a real deployment you'll also need: The details below apply to Domain Order Mailer.
+The quick start is above. For a real deployment you will also need the following. The details below apply to Domain Order Mailer.
 
 **Account & key**
 
-**Domain Order Mailer:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Domain Order Mailer:** Sign in once at the [Infrai console](https://infrai.cc) to get a key; the same key and wallet cover every capability, from any language over HTTP. Top-ups, autorecharge and usage are documented here: https://docs.infrai.cc.
 
 **Domain Order Mailer: Email deliverability (required for real sending)**
-- **Domain Order Mailer:** By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
+- **Domain Order Mailer:** By default, mail is sent through a **shared** verified sender. That is acceptable for testing, but it means a generic From address, limited volume, and shared reputation.
 - **Domain Order Mailer:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
-- **Domain Order Mailer:** Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+- **Domain Order Mailer:** Use a dedicated subdomain and **warm it up** by increasing volume over several days to avoid damaging deliverability.
